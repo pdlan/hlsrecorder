@@ -72,6 +72,7 @@ func fileHandler(w http.ResponseWriter, r *http.Request) {
 	mutex.Lock()
 	playlist = currentPlaylist
 	mutex.Unlock()
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	if playlist == nil {
 		w.WriteHeader(404)
 		return

@@ -20,6 +20,8 @@ type Metadata struct {
 	URI string `json:"uri"`
 	Time int64 `json:"time"`
 	Id string `json:"id"`
+	Status int `json:"status"`
+	Location string `json:"location"`
 }
 
 type RequestDatabase struct {

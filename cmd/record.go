@@ -107,6 +107,8 @@ func onResponse(session *gomitmproxy.Session) *http.Response {
 		URI: uri,
 		Time: time.Now().UnixMicro(),
 		Id: id,
+		Status: res.StatusCode,
+		Location: res.Header.Get("Location"),
 	}
 	filename := fileDir + "/" + id
 	err = os.WriteFile(filename, body, 0644)
