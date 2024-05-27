@@ -51,19 +51,18 @@ func updatePlaylist(realtime bool, offset int, metadata, fileDir string) error {
 	start := time.Now().UnixMicro()
 	for {
 		playlist := findLastPlaylist(metadata, fileDir, timestamp)
+		if playlist != nil {
+			mutex.Lock()
+			if currentPlaylist == nil || currentPlaylist.M3U8SeqNo < playlist.M3U8SeqNo {
+				currentPlaylist = playlist
+			}
+			mutex.Unlock()
+		}
 		time.Sleep(time.Second)
 		diff := time.Now().UnixMicro() - start
 		if !realtime {
 			timestamp = base + diff
 		}
-		if playlist == nil {
-			continue
-		}
-		mutex.Lock()
-		if currentPlaylist == nil || currentPlaylist.M3U8SeqNo < playlist.M3U8SeqNo {
-			currentPlaylist = playlist
-		}
-		mutex.Unlock()
 	}
 }
 

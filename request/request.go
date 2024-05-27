@@ -36,7 +36,6 @@ type Playlist struct {
 	M3U8SeqNo uint64
 }
 
-
 func ReadMetadata(filename, fileDir string) (*RequestDatabase, error) {
 	var data []Metadata
 	metadataFile, err := os.Open(filename)
@@ -59,6 +58,18 @@ func ReadMetadata(filename, fileDir string) (*RequestDatabase, error) {
 		Requests : data,
 		FileDir: fileDir,
 	}, nil
+}
+
+func NewRequestDatabase(fileDir string) *RequestDatabase {
+	return &RequestDatabase {
+		FileDir: fileDir,
+	}
+}
+
+func (r *RequestDatabase) AddRequest(metadata Metadata) int {
+	idx := len(r.Requests)
+	r.Requests = append(r.Requests, metadata)
+	return idx
 }
 
 func (r *RequestDatabase) FindRequest(idx int, pattern string) int {
@@ -173,6 +184,57 @@ func LoadPlaylist(requests *RequestDatabase, idx int,
 	return playlist, m3u8Idx, nil
 }
 
+type DownloadFunction func (requests *RequestDatabase, currURI, uri string, needBody bool) ([]byte, int, error)
+
+func LoadRemotePlaylist(requests *RequestDatabase, downloadFunc DownloadFunction,
+							uri string) (*Playlist, error) {
+	m3u8File, m3u8Idx, err := downloadFunc(requests, "", uri, true)
+	if err != nil {
+		return nil, err
+	}
+	p, listType, err := m3u8.Decode(*bytes.NewBuffer(m3u8File), false)
+	if err != nil {
+		return nil, err
+	}
+	if listType != m3u8.MEDIA {
+		return nil, fmt.Errorf("m3u8 is not media list")
+	}
+	mediaPlaylist := p.(*m3u8.MediaPlaylist)
+	playlist := &Playlist {
+		Database: requests,
+		Files: make(map[string]int),
+		Index: m3u8Idx,
+		M3U8Playlist: mediaPlaylist,
+		M3U8File: mediaPlaylist.String(),
+		M3U8SeqNo: mediaPlaylist.SeqNo,
+	}
+	if mediaPlaylist.Key != nil {
+		filename, err := playlist.FindOrDownloadURI(downloadFunc, uri, mediaPlaylist.Key.URI)
+		if err != nil {
+			return nil, err
+		}
+		mediaPlaylist.Key.URI = filename
+	}
+	for _, segment := range mediaPlaylist.Segments {
+		if segment == nil {
+			continue
+		}
+		filename, err := playlist.FindOrDownloadURI(downloadFunc, uri, segment.URI)
+		if err != nil {
+			return nil, err
+		}
+		segment.URI = filename
+		if segment.Key != nil {
+			filename, err = playlist.FindOrDownloadURI(downloadFunc, uri, segment.Key.URI)
+			if err != nil {
+				return nil, err
+			}
+			segment.Key.URI = filename
+		}
+	}
+	return playlist, nil
+}
+
 func (p *Playlist) FindOrSetURI(uri string) (string, int, error) {
 	parsedURI, err := url.Parse(uri)
 	if err != nil {
@@ -194,6 +256,30 @@ func (p *Playlist) FindOrSetURI(uri string) (string, int, error) {
 	}
 	p.Files[filename] = idx
 	return filename, idx, nil
+}
+
+func (p *Playlist) FindOrDownloadURI(downloadaFunc DownloadFunction,
+										currURI, uri string) (string, error) {
+	parsedURI, err := url.Parse(uri)
+	if err != nil {
+		return "", err
+	}
+	var filename string
+	if parsedURI.Scheme == "" && parsedURI.Host == "" {
+		filename = path.Base(uri)
+	} else {
+		filename = path.Base(parsedURI.Path)
+	}
+	_, ok := p.Files[filename]
+	if ok {
+		return filename, nil
+	}
+	_, idx, err := downloadaFunc(p.Database, currURI, uri, false)
+	if err != nil {
+		return "", err
+	}
+	p.Files[filename] = idx
+	return filename, nil
 }
 
 func (p *Playlist) ReadFile(filename string) []byte {
